@@ -37,11 +37,23 @@ struct if_packet {
  */
 struct rob_elem {
     unsigned pc;
-    static unsigned tag;
+    unsigned tag;
     unsigned fu_type;
     stage inst_stage;
     std::pair<int, int> source_reg;
     int dest_reg;
+
+    // timing spec
+    unsigned if_start;
+    unsigned if_num_cyc;
+    unsigned id_start;
+    unsigned id_num_cyc;
+    unsigned is_start;
+    unsigned is_num_cyc;
+    unsigned ex_start;
+    unsigned ex_num_cyc;
+    unsigned wb_start;
+    unsigned wb_num_cyc;
 };
 
 #endif // TYPES_H

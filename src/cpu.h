@@ -23,22 +23,21 @@
 class cpu : base
 {
     private:
+        // logger reference 
+        logger _log;
+
         // parameters
         unsigned _if_bandwidth;
         unsigned _sched_q_size;
 
-        // data structures
-        std::list<rob_elem> _rob;
-        std::list<rob_elem> _id_queue;
+        unsigned _tag;
 
-        // signals and control
-        unsigned _cycle_count;
+        // data structures
+        std::list<rob_elem*> _rob;
+        std::list<rob_elem*> _id_queue;
 
         // memory interfacing
         std::ifstream _instr_stream;
-
-        // logger reference 
-        logger _log;
     public:
         /**
          * @details Constructor that consumes the parametes for the cpu and interfaces

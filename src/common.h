@@ -77,7 +77,7 @@ class logger : public base
                 if (base_ptr == nullptr) {
                     std::cout << lvl_str << ": " << msg << std::endl;
                 } else {
-                    std::cout << lvl_str << ": " << base_ptr->get_name() << " :: " << msg << std::endl;
+                    std::cout << lvl_str << ": [" << base_ptr->get_cycle() << "] " << base_ptr->get_name() << " :: " << msg << std::endl;
                 }
             }
         }

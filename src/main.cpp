@@ -17,11 +17,7 @@ int main(int argc, char* argv[])
     // initialize logger
     logger log(verbose::DEBUG);
 
-    // check argument count
-    if (argc != 4) {
-        log.log(nullptr, verbose::FATAL, "Number of arguments is invalid");
-        exit(1);
-    }
+    log.log(nullptr, verbose::DEBUG, "Parsing arguments...");
 
     // gather arguments    
     unsigned super_bandwidth = std::stoul(argv[1]);

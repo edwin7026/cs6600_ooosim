@@ -6,13 +6,16 @@
 
 #include "cpu.h"
 
-cpu::cpu(unsigned if_bandwidth, unsigned sched_q_size, const std::string& trace_file_path, const logger &log) : 
+cpu::cpu(unsigned if_bandwidth, unsigned sched_q_size, const std::string& trace_file_path, const logger& log) : 
     base("CPU"),
+    _log(log),
+    _if_bandwidth(if_bandwidth),
+    _sched_q_size(sched_q_size),
+    _tag(0),
     _instr_stream(trace_file_path)
 {
     _log.log(this, verbose::DEBUG, "Constructing CPU");
-    _if_bandwidth = if_bandwidth;
-    _sched_q_size = sched_q_size;
+    
     _cycle_count = 0;
 }
 
@@ -26,22 +29,42 @@ bool cpu::advance_and_check() {
 
 void cpu::fetch() 
 {
-    // TODO
-    // advance instructions in IF to ID stage
+    _log.log(this, verbose::DEBUG, "FETCH :: Entering fetch stage");
 
-    // figure out how many to fetch
-    // TOOD now it just fetches equal to bandwidth number of instructions
-    unsigned num_instr_to_fetch = _if_bandwidth;
+    ////////// Send out instructions to next stage subject to conditions //////////
+
+    // advance instructions in IF to ID stage subject to size of ID (max N in a cycle)
+    unsigned count = 0;
+    for (auto& each : _rob)
+    {
+        // check if ID queue is full or max N instructions are selected
+        // if so break
+        if (_id_queue.size() == 2*_if_bandwidth || count == 5) {
+            break;
+        }
+        
+        // if instruction is in fetch stage push them to ID subject to above conditions
+        if (each->inst_stage == stage::FETCH) {
+            _id_queue.emplace_back(each);
+            count = count + 1;
+        }
+    }
+
+    ////////// Bring in instructions to IF stage subject to condtions //////////
+
+    // take the minimum of quantities: a. the IF bandwidth or the amount of space in ID queue
+    unsigned num_instr_to_fetch = std::min(_if_bandwidth, 2*_if_bandwidth - static_cast<unsigned>(_id_queue.size()));
+
+    _log.log(this, verbose::DEBUG, "FETCH :: Computed number of instructions to fetch: " + std::to_string(num_instr_to_fetch));
 
     // temp variables
     std::string line;
     std::string opr;
-    rob_elem temp_rob_elem;
 
     // fetch
     if(_instr_stream.is_open())
     {
-        for(unsigned i = 0; i < num_instr_to_fetch; i++)
+        for(unsigned i = 0; i < num_instr_to_fetch && (!_instr_stream.eof()); i++)
         {
             getline(_instr_stream, line);
 
@@ -49,25 +72,39 @@ void cpu::fetch()
 
             std::stringstream ss(line);
 
-            ss >> opr;
-            // get the pc
-            temp_rob_elem.pc = std::stoul(opr, (std::size_t*)0, 16);
-
-            ss >> opr;
-            // get fu type
-            temp_rob_elem.fu_type = std::stoul(opr);
-
-            ss >> opr;
-            // dest reg
-            temp_rob_elem.dest_reg = std::stoi(opr);
-
-            ss >> opr;
-            temp_rob_elem.source_reg.first = std::stoi(opr);
-            ss >> opr;
-            temp_rob_elem.source_reg.second = std::stoi(opr);
+            rob_elem* temp_rob_elem_ptr = new rob_elem();
             
-            // insert element to the rob datastructure
-            _rob.emplace_back(temp_rob_elem);
+            try
+            {
+                temp_rob_elem_ptr->tag = _tag;
+                _tag = _tag + 1;
+
+                ss >> opr;
+                // get the pc
+                temp_rob_elem_ptr->pc = std::stoul(opr, nullptr, 16);
+
+                ss >> opr;
+                // get fu type
+                temp_rob_elem_ptr->fu_type = std::stoul(opr);
+
+                ss >> opr;
+                // dest reg
+                temp_rob_elem_ptr->dest_reg = std::stoi(opr);
+
+                ss >> opr;
+                temp_rob_elem_ptr->source_reg.first = std::stoi(opr);
+                ss >> opr;
+                temp_rob_elem_ptr->source_reg.second = std::stoi(opr);
+
+                // set stage
+                temp_rob_elem_ptr->inst_stage = stage::FETCH;
+            
+                // insert element to the rob datastructure
+                _rob.emplace_back(temp_rob_elem_ptr);
+            }
+            catch (std::invalid_argument&) {
+                _log.log(this, verbose::DEBUG, "Invalid line");
+            }
         }
     }
     else {
@@ -75,10 +112,14 @@ void cpu::fetch()
         exit(1);
     }
 
-    // set all instructions to IF stage
+    if (_tag >= 3) {
+        exit(0);
+    }
 }
 
-void cpu::dispatch() {
+void cpu::dispatch() 
+{
+    _log.log(this, verbose::DEBUG, "DISPATCH :: Entering dispatch stage");
 
     // advance instructions from ID to IS
 

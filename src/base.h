@@ -20,8 +20,15 @@ class base
 {
     protected:
         std::string _name;
+
+        // cycle count
+        unsigned _cycle_count;
     public:
         base(const std::string& name) : _name(name) {}
+
+        const unsigned& get_cycle(){
+            return _cycle_count;
+        }
 
         const std::string& get_name(){
             return _name;
