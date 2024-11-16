@@ -9,7 +9,9 @@
 cpu::cpu(unsigned if_bandwidth, unsigned sched_q_size, const std::string& trace_file_path, const logger& log) : 
     base("CPU"),
     _log(log),
+    _dollar_finish(false),
     _if_bandwidth(if_bandwidth),
+    _sched_q_size(sched_q_size),
     _tag(0),
     _exec_queue(if_bandwidth),
     _instr_stream(trace_file_path)
@@ -24,16 +26,23 @@ cpu::cpu(unsigned if_bandwidth, unsigned sched_q_size, const std::string& trace_
 }
 
 bool cpu::advance_and_check() {
+    
+    // print rob content on every cycle
+    // for(auto& each : _rob) {
+    //     std::cout << "Tag: " << each->tag << " STAGE: " << each->inst_stage << std::endl;
+    // }
+    // std::cout << "RDY: " << _reg_file[14].first << " Tag: " << _reg_file[14].second << std::endl;
+
     // cycle incrementation
     _cycle_count = _cycle_count + 1;
 
     // DEBUG
-    if (_cycle_count > 30)
-        exit(0);
+    if (_cycle_count > 2000)
+        return false;
     return true;
     
     // advance cycle until rob is not empty
-    // return !_rob.empty();
+    return !_rob.empty();
 }
 
 void cpu::fetch() 
@@ -48,7 +57,7 @@ void cpu::fetch()
     {
         // check if ID queue is full or max N instructions are selected
         // if so break
-        if (_id_queue.size() == 2*_if_bandwidth || count == _if_bandwidth) {
+        if ((_id_queue.size() == 2*_if_bandwidth) || (count == _if_bandwidth)) {
             break;
         }
         
@@ -118,8 +127,10 @@ void cpu::fetch()
 
                 ss >> opr;
                 temp_rob_elem_ptr->rs1.second = std::stoi(opr);
+                temp_rob_elem_ptr->rs1_abs = temp_rob_elem_ptr->rs1.second;
                 ss >> opr;
                 temp_rob_elem_ptr->rs2.second = std::stoi(opr);
+                temp_rob_elem_ptr->rs2_abs = temp_rob_elem_ptr->rs2.second;
 
                 // set stage
                 temp_rob_elem_ptr->inst_stage = stage::FETCH;
@@ -139,6 +150,7 @@ void cpu::fetch()
 
             // if we reach end of file, break
             if (_instr_stream.eof()) {
+                _dollar_finish = true;
                 break;
             }
         }
@@ -165,7 +177,7 @@ void cpu::dispatch()
         // choose only the dispatch ones 
         if (each->inst_stage != stage::DISPATCH) {
             continue;
-        } 
+        }
 
         // check if IS queue is full or max N instructions are selected
         if ((_sched_queue.size() == _sched_q_size) || (count == _if_bandwidth)) {
@@ -215,6 +227,9 @@ void cpu::issue()
             continue;
         }
 
+        // update the readiness of instruction 
+        update_ready(each);
+
         // if instruction is not ready for execution
         if (!each->is_rdy) {
             continue;
@@ -226,7 +241,7 @@ void cpu::issue()
 
         // enter cycle parameters before leaving
         // elapsed number of cycles
-        each->is_num_cyc = _cycle_count - each->id_start;
+        each->is_num_cyc = _cycle_count - each->is_start;
 
         // log the leaving instruction
         _log.log(this, verbose::DEBUG, "ISSUE :: Leaving: " + each->pprint());
@@ -235,7 +250,7 @@ void cpu::issue()
         each->inst_stage = stage::EXECUTE;
 
         // enter cycle start for EX;
-        each->is_start = _cycle_count;
+        each->ex_start = _cycle_count;
 
         // emplace into next queue
         _exec_queue.emplace_back(each);
@@ -252,16 +267,51 @@ void cpu::issue()
 void cpu::execute()
 {
     _log.log(this, verbose::DEBUG, "EXECUTE :: Entering execute stage");
-    for(auto& each : _exec_queue) {
-        advance_exec(each);
-    }
     
-    // advance instructions from EX to restire
+    ////////// Send out instructions to next stage subject to conditions //////////
+
+    // advance instructions from EX to WB
+    for(auto& each : _rob) 
+    {
+        if (each->inst_stage != stage::EXECUTE) {
+            continue;
+        }
+
+        // if execution is complete
+        if (advance_exec(each)) 
+        {
+            _log.log(this, verbose::DEBUG, "EX :: Leaving: " + each->pprint());
+            each->inst_stage = stage::WRITEBACK;
+            each->wb_start = _cycle_count;
+            _exec_queue.remove(each);
+        }
+    }
 }
 
 void cpu::retire() 
 {
     _log.log(this, verbose::DEBUG, "RETIRE :: Entering retire stage");
+
+    //std::list<rob_elem*> purge_lst;
+    for (auto& each : _rob)
+    {
+        if(each->inst_stage != stage::WRITEBACK) {
+            continue;
+        }
+        each->inst_stage = stage::COMMIT;
+        
+        // add cycle count
+        each->wb_num_cyc = _cycle_count - each->wb_start;
+        _log.log(this, verbose::DEBUG, "Commit :: " + each->pprint());
+
+        //purge_lst.emplace_back(each);
+    }
+    
+    // remove from rob
+    //for(auto& each : purge_lst) {
+        //_rob.remove(each);
+        //delete each;
+    //}
 }
 
 void cpu::simulate()
@@ -273,6 +323,8 @@ void cpu::simulate()
         dispatch();
         fetch();
     } while(advance_and_check()); // add conditions for end of trace
+
+    print_rob();
 }
 
 void cpu::rename(rob_elem *inst)
@@ -305,12 +357,104 @@ void cpu::rename(rob_elem *inst)
 
     // set destination register as not ready in regfile
     // add tag of this instruction to the regfile
+    // NOTE: this should only happen if rs != rd
     if (inst->rd != -1) {
         _reg_file[inst->rd].first = false;
         _reg_file[inst->rd].second = inst->tag;
     }
 }
 
-void cpu::advance_exec(rob_elem *inst)
+void cpu::update_ready(rob_elem* inst)
 {
+    if(inst->rs1.first && inst->rs2.first) {
+        inst->is_rdy = true;
+        return;
+    }
+
+    // update
+    else {
+        // update from register file
+
+        // for rs1
+        if (!inst->rs1.first) {
+            // check if register is ready
+            for(auto& reg : _reg_file) {
+                // check if same tag withthe producer
+                if (reg.second == inst->rs1.second) {
+                    if (reg.first) {
+                        inst->rs1.first = true;
+                    }
+                    break;
+                }
+            }
+        }
+
+        // for rs2
+        if (!inst->rs2.first) {
+            // check if register is ready
+            for(auto& reg : _reg_file) {
+                // check if same tag with producer
+                if (reg.second == inst->rs2.second) {
+                    if (reg.first) {
+                        inst->rs2.first = true;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    // finally, update the status
+    if(inst->rs1.first && inst->rs2.first) {
+        inst->is_rdy = true;
+    }
+}
+
+
+bool cpu::advance_exec(rob_elem *inst)
+{
+    unsigned fu_type = inst->fu_type;
+    unsigned ex_cycles = 0;
+    // get num cycles
+    switch(fu_type){
+        case 0 : ex_cycles = 1; break;
+        case 1 : ex_cycles = 2; break;
+        case 2 : ex_cycles = 10; break;
+    }
+    // get num cycles elapsed 
+    inst->ex_num_cyc = _cycle_count - inst->ex_start;
+    if (inst->ex_num_cyc == ex_cycles) 
+    {
+        if (inst->rd != -1)
+        {
+            if (_reg_file[inst->rd].second == inst->tag) {
+                _reg_file[inst->rd].first = true;
+            }
+
+            // wake up instructions
+            for (auto& each : _sched_queue)
+            {
+                if(!each->rs1.first) {
+                    if (each->rs1.second == inst->tag) {
+                       each->rs1.first = true; 
+                    }
+                }
+                if(!each->rs2.first) {
+                    if (each->rs2.second == inst->tag) {
+                       each->rs2.first = true; 
+                    }
+                }
+            }
+        }
+        return true;
+    } else {
+        return false;
+    }
+}
+
+void cpu::print_rob()
+{
+    for(auto& inst : _rob) {
+        std::cout << inst->pprint() << std::endl; 
+    }
 }

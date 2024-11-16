@@ -19,7 +19,8 @@ enum stage {
     DISPATCH,
     ISSUE,
     EXECUTE,
-    WRITEBACK
+    WRITEBACK,
+    COMMIT
 };
 
 /**
@@ -47,6 +48,9 @@ struct rob_elem {
     std::pair<bool, int> rs2;
     int rd;
 
+    int rs1_abs;
+    int rs2_abs;
+
     // is ready for execution
     bool is_rdy;
 
@@ -65,6 +69,11 @@ struct rob_elem {
     // constructor
     rob_elem()
     {   
+        pc = 0;
+        tag = 0;
+        fu_type = 0;
+        inst_stage = stage::FETCH;
+
         // initialize registers
         rs1.first = false;
         rs1.second = -1;
@@ -72,7 +81,20 @@ struct rob_elem {
         rs2.second = -1;
         rd = -1;
 
+        // logic to see if ready to be issued
         is_rdy = false;
+
+        // initialize counters
+        if_start = 0;
+        if_num_cyc = 0;
+        id_start = 0;
+        id_num_cyc = 0;
+        is_start = 0;
+        is_num_cyc = 0;
+        ex_start = 0;
+        ex_num_cyc = 0;
+        wb_start = 0;
+        wb_num_cyc = 0;
     }
 
     /**
@@ -81,10 +103,13 @@ struct rob_elem {
     const std::string pprint() {
         return std::to_string(tag) + 
                 "  fu{" + std::to_string(fu_type) + "}" +
-                " src{" + std::to_string(rs1.second) + "," + std::to_string(rs2.second) + "}" +
+                " src{" + std::to_string(rs1_abs) + "," + std::to_string(rs2_abs) + "}" +
                 " dst{" + std::to_string(rd) + "}" +
                 " IF{" + std::to_string(if_start) + "," + std::to_string(if_num_cyc) + "}" +
-                " ID{" + std::to_string(id_start) + "," + std::to_string(id_num_cyc) + "}";
+                " ID{" + std::to_string(id_start) + "," + std::to_string(id_num_cyc) + "}" +
+                " IS{" + std::to_string(is_start) + "," + std::to_string(is_num_cyc) + "}" +
+                " EX{" + std::to_string(ex_start) + "," + std::to_string(ex_num_cyc) + "}" +
+                " WB{" + std::to_string(wb_start) + "," + std::to_string(wb_num_cyc) + "}";
     }
 };
 

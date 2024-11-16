@@ -27,6 +27,7 @@ class cpu : base
     private:
         // logger reference 
         logger _log;
+        bool _dollar_finish;
 
         // parameters
         unsigned _if_bandwidth;
@@ -76,7 +77,10 @@ class cpu : base
         void simulate();
 
         void rename(rob_elem* inst);
-        void advance_exec(rob_elem* inst); 
+        void update_ready(rob_elem* inst);
+        bool advance_exec(rob_elem* inst);
+
+        void print_rob();
 };
 
 #endif // CPU_H

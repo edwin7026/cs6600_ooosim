@@ -15,7 +15,7 @@
 int main(int argc, char* argv[])
 {
     // initialize logger
-    logger log(verbose::DEBUG);
+    logger log(verbose::INFO);
 
     log.log(nullptr, verbose::DEBUG, "Parsing arguments...");
 
