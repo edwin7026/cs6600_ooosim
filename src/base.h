@@ -24,7 +24,7 @@ class base
         // cycle count
         unsigned _cycle_count;
     public:
-        base(const std::string& name) : _name(name) {}
+        base(const std::string& name) : _name(name), _cycle_count(0) {}
 
         const unsigned& get_cycle(){
             return _cycle_count;

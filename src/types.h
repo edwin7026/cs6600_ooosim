@@ -1,12 +1,13 @@
 /**
- * @file cpu.h
- * @details This file contains the class declaration for IF stage of CPU
+ * @file types.h
+ * @details This file contains definitions of basic structs and enums
  * @author Edwin Joy <edwin7026@gmail.com>
  */
 
 #ifndef TYPES_H
 #define TYPES_H
 
+#include <iostream>
 #include <string>
 #include <utility>
 
@@ -40,8 +41,14 @@ struct rob_elem {
     unsigned tag;
     unsigned fu_type;
     stage inst_stage;
-    std::pair<int, int> source_reg;
-    int dest_reg;
+    
+    // register with its RDY value
+    std::pair<bool, int> rs1;
+    std::pair<bool, int> rs2;
+    int rd;
+
+    // is ready for execution
+    bool is_rdy;
 
     // timing spec
     unsigned if_start;
@@ -54,6 +61,31 @@ struct rob_elem {
     unsigned ex_num_cyc;
     unsigned wb_start;
     unsigned wb_num_cyc;
+    
+    // constructor
+    rob_elem()
+    {   
+        // initialize registers
+        rs1.first = false;
+        rs1.second = -1;
+        rs2.first = false;
+        rs2.second = -1;
+        rd = -1;
+
+        is_rdy = false;
+    }
+
+    /**
+     * @details Pretty print instruction state
+     */
+    const std::string pprint() {
+        return std::to_string(tag) + 
+                "  fu{" + std::to_string(fu_type) + "}" +
+                " src{" + std::to_string(rs1.second) + "," + std::to_string(rs2.second) + "}" +
+                " dst{" + std::to_string(rd) + "}" +
+                " IF{" + std::to_string(if_start) + "," + std::to_string(if_num_cyc) + "}" +
+                " ID{" + std::to_string(id_start) + "," + std::to_string(id_num_cyc) + "}";
+    }
 };
 
 #endif // TYPES_H

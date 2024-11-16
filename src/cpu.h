@@ -11,7 +11,9 @@
 #include <string>
 #include <fstream>
 #include <sstream>
+
 #include <list>
+#include <array>
 
 // local includes
 #include <common.h>
@@ -33,8 +35,12 @@ class cpu : base
         unsigned _tag;
 
         // data structures
+        std::array<std::pair<bool, int>, 128> _reg_file;
+
         std::list<rob_elem*> _rob;
         std::list<rob_elem*> _id_queue;
+        std::list<rob_elem*> _sched_queue;
+        std::list<rob_elem*> _exec_queue;
 
         // memory interfacing
         std::ifstream _instr_stream;
@@ -68,6 +74,9 @@ class cpu : base
          * @details Simulate the core
          */
         void simulate();
+
+        void rename(rob_elem* inst);
+        void advance_exec(rob_elem* inst); 
 };
 
 #endif // CPU_H
