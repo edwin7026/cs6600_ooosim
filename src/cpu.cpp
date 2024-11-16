@@ -26,23 +26,20 @@ cpu::cpu(unsigned if_bandwidth, unsigned sched_q_size, const std::string& trace_
 }
 
 bool cpu::advance_and_check() {
-    
-    // print rob content on every cycle
-    // for(auto& each : _rob) {
-    //     std::cout << "Tag: " << each->tag << " STAGE: " << each->inst_stage << std::endl;
-    // }
-    // std::cout << "RDY: " << _reg_file[14].first << " Tag: " << _reg_file[14].second << std::endl;
-
     // cycle incrementation
     _cycle_count = _cycle_count + 1;
 
-    // DEBUG
-    if (_cycle_count > 2000)
+    // no more instructions to fetch and commit log size is equal to number of 
+    // tags issued
+    if(_dollar_finish && (_commit_log.size()==_tag))
         return false;
+
     return true;
-    
-    // advance cycle until rob is not empty
-    return !_rob.empty();
+}
+
+// Utility function
+bool isWhitespaceOnly(const std::string& str) {
+    return std::all_of(str.begin(), str.end(), ::isspace);
 }
 
 void cpu::fetch() 
@@ -88,7 +85,12 @@ void cpu::fetch()
     ////////// Bring in instructions to IF stage subject to condtions //////////
 
     // take the minimum of quantities: a. the IF bandwidth or the amount of space in ID queue
-    // TODO not sure if this is right
+
+    // nothing to fetch, then return
+    if (_dollar_finish) {
+        return;
+    }
+    
     unsigned num_instr_to_fetch = std::min(_if_bandwidth, 2*_if_bandwidth - static_cast<unsigned>(_id_queue.size()));
 
     _log.log(this, verbose::DEBUG, "FETCH :: Computed number of instructions to fetch: " + std::to_string(num_instr_to_fetch));
@@ -100,58 +102,64 @@ void cpu::fetch()
     // fetch
     if(_instr_stream.is_open())
     {
-        for(unsigned i = 0; i < num_instr_to_fetch; i++)
+        if(line.empty() || isWhitespaceOnly(line))
         {
-            getline(_instr_stream, line);
-
-            std::stringstream ss(line);
-
-            rob_elem* temp_rob_elem_ptr = new rob_elem();
-            
-            try
+            for(unsigned i = 0; i < num_instr_to_fetch; i++)
             {
-                temp_rob_elem_ptr->tag = _tag;
-                _tag = _tag + 1;
+                getline(_instr_stream, line);
 
-                ss >> opr;
-                // get the pc
-                temp_rob_elem_ptr->pc = std::stoul(opr, nullptr, 16);
+                if (!line.empty())
+                {
+                    std::stringstream ss(line);
 
-                ss >> opr;
-                // get fu type
-                temp_rob_elem_ptr->fu_type = std::stoul(opr);
-
-                ss >> opr;
-                // dest reg
-                temp_rob_elem_ptr->rd = std::stoi(opr);
-
-                ss >> opr;
-                temp_rob_elem_ptr->rs1.second = std::stoi(opr);
-                temp_rob_elem_ptr->rs1_abs = temp_rob_elem_ptr->rs1.second;
-                ss >> opr;
-                temp_rob_elem_ptr->rs2.second = std::stoi(opr);
-                temp_rob_elem_ptr->rs2_abs = temp_rob_elem_ptr->rs2.second;
-
-                // set stage
-                temp_rob_elem_ptr->inst_stage = stage::FETCH;
-
-                // set cycle params of the stage
-                temp_rob_elem_ptr->if_start = _cycle_count;
-
-                // log the line
-                _log.log(this, verbose::DEBUG, "FETCH :: Adding to ROB: " + temp_rob_elem_ptr->pprint());
+                    rob_elem* temp_rob_elem_ptr = new rob_elem();
             
-                // insert element to the rob datastructure
-                _rob.emplace_back(temp_rob_elem_ptr);
-            }
-            catch (std::invalid_argument&) {
-                _log.log(this, verbose::DEBUG, "Invalid line");
-            }
+                    try
+                    {
+                        ss >> opr;
+                        // get the pc
+                        temp_rob_elem_ptr->pc = std::stoul(opr, nullptr, 16);
 
-            // if we reach end of file, break
-            if (_instr_stream.eof()) {
-                _dollar_finish = true;
-                break;
+                        ss >> opr;
+                        // get fu type
+                        temp_rob_elem_ptr->fu_type = std::stoul(opr);
+
+                        ss >> opr;
+                        // dest reg
+                        temp_rob_elem_ptr->rd = std::stoi(opr);
+
+                        ss >> opr;
+                        temp_rob_elem_ptr->rs1.second = std::stoi(opr);
+                        temp_rob_elem_ptr->rs1_abs = temp_rob_elem_ptr->rs1.second;
+                        ss >> opr;
+                        temp_rob_elem_ptr->rs2.second = std::stoi(opr);
+                        temp_rob_elem_ptr->rs2_abs = temp_rob_elem_ptr->rs2.second;
+
+                        // set stage
+                        temp_rob_elem_ptr->inst_stage = stage::FETCH;
+
+                        // set cycle params of the stage
+                        temp_rob_elem_ptr->if_start = _cycle_count;
+
+                        temp_rob_elem_ptr->tag = _tag;
+                        _tag = _tag + 1;
+
+                        // log the line
+                        _log.log(this, verbose::DEBUG, "FETCH :: Adding to ROB: " + temp_rob_elem_ptr->pprint());
+            
+                        // insert element to the rob datastructure
+                        _rob.emplace_back(temp_rob_elem_ptr);
+                    }
+                    catch (std::invalid_argument&) {
+                        _log.log(this, verbose::DEBUG, "Invalid line");
+                    }
+                }
+
+                // if we reach end of file, break
+                if (_instr_stream.eof()) {
+                    _dollar_finish = true;
+                    break;
+                }
             }
         }
     }
@@ -292,26 +300,19 @@ void cpu::retire()
 {
     _log.log(this, verbose::DEBUG, "RETIRE :: Entering retire stage");
 
-    //std::list<rob_elem*> purge_lst;
     for (auto& each : _rob)
     {
         if(each->inst_stage != stage::WRITEBACK) {
             continue;
         }
+
         each->inst_stage = stage::COMMIT;
-        
         // add cycle count
         each->wb_num_cyc = _cycle_count - each->wb_start;
-        _log.log(this, verbose::DEBUG, "Commit :: " + each->pprint());
 
-        //purge_lst.emplace_back(each);
+        _commit_log.emplace_back(each);
+        _log.log(this, verbose::DEBUG, "Commit :: " + each->pprint());
     }
-    
-    // remove from rob
-    //for(auto& each : purge_lst) {
-        //_rob.remove(each);
-        //delete each;
-    //}
 }
 
 void cpu::simulate()
@@ -324,7 +325,7 @@ void cpu::simulate()
         fetch();
     } while(advance_and_check()); // add conditions for end of trace
 
-    print_rob();
+    print_purge_rob();
 }
 
 void cpu::rename(rob_elem *inst)
@@ -370,44 +371,6 @@ void cpu::update_ready(rob_elem* inst)
         inst->is_rdy = true;
         return;
     }
-
-    // update
-    else {
-        // update from register file
-
-        // for rs1
-        if (!inst->rs1.first) {
-            // check if register is ready
-            for(auto& reg : _reg_file) {
-                // check if same tag withthe producer
-                if (reg.second == inst->rs1.second) {
-                    if (reg.first) {
-                        inst->rs1.first = true;
-                    }
-                    break;
-                }
-            }
-        }
-
-        // for rs2
-        if (!inst->rs2.first) {
-            // check if register is ready
-            for(auto& reg : _reg_file) {
-                // check if same tag with producer
-                if (reg.second == inst->rs2.second) {
-                    if (reg.first) {
-                        inst->rs2.first = true;
-                    }
-                    break;
-                }
-            }
-        }
-    }
-
-    // finally, update the status
-    if(inst->rs1.first && inst->rs2.first) {
-        inst->is_rdy = true;
-    }
 }
 
 
@@ -452,9 +415,28 @@ bool cpu::advance_exec(rob_elem *inst)
     }
 }
 
-void cpu::print_rob()
+void cpu::print_purge_rob()
 {
     for(auto& inst : _rob) {
-        std::cout << inst->pprint() << std::endl; 
+        std::cout << inst->pprint() << std::endl;
+        delete inst;
     }
 }
+
+void cpu::print_config()
+{
+    std::cout << "CONFIGURATION" << std::endl;
+    std::cout << " superscalar bandwidth (N)\t= " << _if_bandwidth << std::endl;
+    std::cout << " dispatch queue size (2*N)\t= " << 2*_if_bandwidth << std::endl;
+    std::cout << " schedule queue size (S)\t= " << _sched_q_size << std::endl;
+}
+
+void cpu::print_results()
+{
+    std::cout << "RESULTS" << std::endl;
+    std::cout << " number of instructions\t= " << _tag << std::endl;
+    std::cout << " number of cycles\t= " << _cycle_count - 1 << std::endl;
+    std::cout << " IPC\t\t\t= " << std::setprecision(3) << (float)_tag/(float)(_cycle_count - 1) << std::endl;
+}
+
+

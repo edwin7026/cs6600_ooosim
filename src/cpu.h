@@ -11,6 +11,8 @@
 #include <string>
 #include <fstream>
 #include <sstream>
+#include <iomanip>
+#include <algorithm>
 
 #include <list>
 #include <array>
@@ -42,6 +44,7 @@ class cpu : base
         std::list<rob_elem*> _id_queue;
         std::list<rob_elem*> _sched_queue;
         std::list<rob_elem*> _exec_queue;
+        std::list<rob_elem*> _commit_log;
 
         // memory interfacing
         std::ifstream _instr_stream;
@@ -80,7 +83,9 @@ class cpu : base
         void update_ready(rob_elem* inst);
         bool advance_exec(rob_elem* inst);
 
-        void print_rob();
+        void print_purge_rob();
+        void print_config();
+        void print_results();
 };
 
 #endif // CPU_H

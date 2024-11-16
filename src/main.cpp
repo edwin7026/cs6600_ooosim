@@ -29,6 +29,10 @@ int main(int argc, char* argv[])
 
     // simulate cpu
     cpu_inst.simulate();
+    
+    // results
+    cpu_inst.print_config();
+    cpu_inst.print_results();
 
     return 0;
 }

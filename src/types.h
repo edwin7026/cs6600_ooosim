@@ -39,7 +39,7 @@ struct if_packet {
  */
 struct rob_elem {
     unsigned pc;
-    unsigned tag;
+    int tag;
     unsigned fu_type;
     stage inst_stage;
     
